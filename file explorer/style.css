@@ -1,0 +1,229 @@
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f3f5f9;
+    color: #1f2937;
+}
+
+header {
+    background: #1f2937;
+    color: white;
+    padding: 22px;
+}
+
+header h2 {
+    margin: 0 0 6px;
+}
+
+header p {
+    margin: 0;
+    color: #d1d5db;
+}
+
+.app {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 20px;
+}
+
+.toolbar,
+.search-area,
+.editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.toolbar {
+    margin-bottom: 15px;
+}
+
+button {
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 13px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+button:hover {
+    filter: brightness(0.92);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+.secondary {
+    background: #4b5563;
+}
+
+.danger {
+    background: #dc2626;
+}
+
+.search-area {
+    margin: 15px 0;
+}
+
+.search-area input {
+    flex: 1;
+    min-width: 200px;
+}
+
+input,
+select,
+textarea {
+    font: inherit;
+    padding: 11px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+}
+
+.container,
+.editor-panel {
+    background: white;
+    padding: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px #0000000a;
+}
+
+.navigation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+#breadcrumb {
+    font-weight: bold;
+    overflow-wrap: anywhere;
+}
+
+#status {
+    min-height: 20px;
+    color: #15803d;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.item-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.folder-name {
+    color: #1d4ed8;
+    cursor: pointer;
+}
+
+.folder-name:hover {
+    text-decoration: underline;
+}
+
+.item-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.item-actions button {
+    padding: 7px 9px;
+}
+
+.item-meta {
+    color: #6b7280;
+    font-size: 12px;
+    display: block;
+    margin-top: 4px;
+}
+
+.editor-panel {
+    margin-top: 20px;
+}
+
+.editor-panel h3 {
+    margin-top: 0;
+}
+
+.editor-panel label {
+    display: block;
+    margin: 12px 0 8px;
+}
+
+#editorContent {
+    display: block;
+    width: 100%;
+    min-height: 280px;
+    resize: vertical;
+    line-height: 1.5;
+    font-family: Consolas, monospace;
+}
+
+.editor-actions {
+    margin-top: 12px;
+}
+
+.empty-message {
+    color: #6b7280;
+    padding: 20px 0;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+@media (max-width: 600px) {
+    .app {
+        padding: 0 10px;
+        margin: 15px auto;
+    }
+
+    .container,
+    .editor-panel {
+        padding: 14px;
+    }
+
+    .item {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .item-name {
+        flex-basis: 100%;
+    }
+
+    .item-actions {
+        width: 100%;
+    }
+
+    .search-area {
+        align-items: stretch;
+    }
+
+    .search-area input,
+    .search-area select {
+        width: 100%;
+    }
+}

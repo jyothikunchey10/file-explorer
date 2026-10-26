@@ -1,0 +1,101 @@
+
+<!DOCTYPE html>
+<head>
+
+    <title>My File Explorer</title>
+
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
+</head>
+
+<body>
+    <header>
+        <h2> My File Explorer</h2>
+        <p>Manage your files and folders</p>
+    </header>
+
+    <main class="app">
+        <section class="toolbar">
+            <button class="secondary" onclick="goBack()">
+                ← Back
+            </button>
+
+            <button onclick="createFolder()">
+                + New Folder
+            </button>
+
+            <button onclick="createFile()">
+                + New Text File
+            </button>
+
+            <button onclick="document.getElementById('fileInput').click()">
+                Upload Files
+            </button>
+
+            <input
+                type="file"
+                id="fileInput"
+                multiple
+                hidden
+                onchange="uploadFiles(event)"
+            >
+        </section>
+
+        <section class="search-area">
+            <input
+                type="search"
+                id="searchInput"
+                placeholder="Search files and folders..."
+                oninput="renderItems()"
+                aria-label="Search files and folders"
+            >
+
+            <select id="sortSelect" onchange="renderItems()">
+                <option value="name">Sort by name</option>
+                <option value="type">Sort by type</option>
+                <option value="newest">Recently modified</option>
+            </select>
+        </section>
+
+        <p id="status" role="status" aria-live="polite"></p>
+
+        <section class="container">
+            <div class="navigation">
+                <div id="breadcrumb">Home</div>
+                <button
+                    id="homeButton"
+                    class="secondary"
+                    onclick="goHome()"
+                >
+                    Home
+                </button>
+            </div>
+
+            <div id="fileList"></div>
+        </section>
+
+        <section class="editor-panel" id="editorPanel" hidden>
+            <h3 id="editorTitle">Text Editor</h3>
+
+            <label for="editorContent">File content</label>
+
+            <textarea
+                id="editorContent"
+                placeholder="Write your text here..."
+                spellcheck="false"
+            ></textarea>
+
+            <div class="editor-actions">
+                <button onclick="saveEditor()">Save</button>
+
+                <button
+                    class="secondary"
+                    onclick="cancelEditor()"
+                >
+                    Cancel
+                </button>
+            </div>
+        </section>
+    </main>
+</body>
+</html>
