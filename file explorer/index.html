@@ -1,36 +1,32 @@
 
 <!DOCTYPE html>
+<html lang="en">
 <head>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My File Explorer</title>
-
     <link rel="stylesheet" href="style.css">
     <script src="script.js" defer></script>
 </head>
 
 <body>
-    <header>
-        <h2> My File Explorer</h2>
-        <p>Manage your files and folders</p>
+    <header class="top-header">
+        <div>
+            <h2>📁 My File Explorer</h2>
+            <p>Manage your files and folders easily</p>
+        </div>
+        <button id="themeButton" class="theme-btn" onclick="toggleTheme()">🌙 Dark Mode</button>
     </header>
 
     <main class="app">
+
+        <!-- Toolbar -->
         <section class="toolbar">
-            <button class="secondary" onclick="goBack()">
-                ← Back
-            </button>
-
-            <button onclick="createFolder()">
-                + New Folder
-            </button>
-
-            <button onclick="createFile()">
-                + New Text File
-            </button>
-
-            <button onclick="document.getElementById('fileInput').click()">
-                Upload Files
-            </button>
+            <button class="secondary" onclick="goBack()">← Back</button>
+            <button onclick="createFolder()">＋ New Folder</button>
+            <button onclick="createFile()">＋ New Text File</button>
+            <button onclick="document.getElementById('fileInput').click()">⬆ Upload Files</button>
+            <button class="secondary" onclick="pasteItems()">📋 Paste</button>
 
             <input
                 type="file"
@@ -41,43 +37,87 @@
             >
         </section>
 
+        <!-- Search and Sort -->
         <section class="search-area">
             <input
                 type="search"
                 id="searchInput"
-                placeholder="Search files and folders..."
+                placeholder="🔍 Search files and folders..."
                 oninput="renderItems()"
-                aria-label="Search files and folders"
             >
 
             <select id="sortSelect" onchange="renderItems()">
-                <option value="name">Sort by name</option>
-                <option value="type">Sort by type</option>
-                <option value="newest">Recently modified</option>
+                <option value="name">Sort by Name</option>
+                <option value="type">Sort by Type</option>
+                <option value="newest">Recently Modified</option>
+                <option value="oldest">Oldest First</option>
+                <option value="size">Largest First</option>
             </select>
+
+            <div class="view-buttons">
+                <button id="gridButton" class="view-active" onclick="setView('grid')">▦ Grid</button>
+                <button id="listButton" onclick="setView('list')">☷ List</button>
+            </div>
         </section>
 
         <p id="status" role="status" aria-live="polite"></p>
 
+        <!-- Explorer -->
         <section class="container">
-            <div class="navigation">
-                <div id="breadcrumb">Home</div>
-                <button
-                    id="homeButton"
-                    class="secondary"
-                    onclick="goHome()"
-                >
-                    Home
-                </button>
-            </div>
 
-            <div id="fileList"></div>
+            <aside class="sidebar">
+                <h3>Quick Access</h3>
+
+                <button class="side-button" onclick="goHome()">🏠 Home</button>
+                <button class="side-button" onclick="showFavorites()">⭐ Favorites</button>
+
+                <div class="sidebar-info">
+                    <h4>Keyboard Shortcuts</h4>
+                    <p>F2 – Rename</p>
+                    <p>Delete – Delete</p>
+                    <p>Ctrl + C – Copy</p>
+                    <p>Ctrl + X – Cut</p>
+                    <p>Ctrl + V – Paste</p>
+                    <p>Ctrl + Shift + N – New Folder</p>
+                    <p>Enter – Open</p>
+                    <p>Esc – Close Preview</p>
+                </div>
+            </aside>
+
+            <div class="explorer-content">
+
+                <div class="navigation">
+                    <div id="breadcrumb">🏠 Home</div>
+                    <button class="secondary" onclick="goHome()">Home</button>
+                </div>
+
+                <div id="dropZone" class="drop-zone">
+                    <span>📂</span>
+                    <p>Drag and drop files here to upload</p>
+                </div>
+
+                <div class="content-heading">
+                    <h3 id="folderHeading">Home</h3>
+                    <span id="itemCount">0 items</span>
+                </div>
+
+                <div id="fileList" class="file-grid"></div>
+
+            </div>
         </section>
 
+        <!-- Details Panel -->
+        <section class="details-panel" id="detailsPanel" hidden>
+            <h3>📄 File Information</h3>
+            <div id="detailsContent"></div>
+            <button class="secondary" onclick="closeDetails()">Close</button>
+        </section>
+
+        <!-- Text Editor -->
         <section class="editor-panel" id="editorPanel" hidden>
             <h3 id="editorTitle">Text Editor</h3>
 
-            <label for="editorContent">File content</label>
+            <label for="editorContent">File Content</label>
 
             <textarea
                 id="editorContent"
@@ -87,15 +127,24 @@
 
             <div class="editor-actions">
                 <button onclick="saveEditor()">Save</button>
-
-                <button
-                    class="secondary"
-                    onclick="cancelEditor()"
-                >
-                    Cancel
-                </button>
+                <button class="secondary" onclick="cancelEditor()">Cancel</button>
             </div>
         </section>
+
+        <!-- Preview Panel -->
+        <section class="preview-panel" id="previewPanel" hidden>
+            <div class="preview-header">
+                <h3 id="previewTitle">File Preview</h3>
+                <button class="secondary" onclick="closePreview()">✕ Close</button>
+            </div>
+
+            <div id="previewContent" class="preview-content"></div>
+        </section>
+
     </main>
+
+    <footer>
+        <p>My File Explorer | Your personal file management system</p>
+    </footer>
 </body>
 </html>
