@@ -1,0 +1,139 @@
+# MY FILE EXPLORER – SOFTWARE TEST CASES
+
+## 1. Project Overview
+
+**Project Name:** My File Explorer
+
+**Objective:** To develop a browser-based file management application that allows users to create, upload, organize, edit, preview, and manage files and folders.
+
+**Storage:** IndexedDB (browser storage)
+
+**Testing Type:** Manual Functional Testing, UI Testing, Negative Testing and Data Persistence Testing.
+
+## 2. Test Cases
+
+### Module 1: Create Files and Folders
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC001 | Open the application. | File Explorer should open successfully. |
+| TC002 | Click New Folder and enter a valid folder name. | A new folder should be created. |
+| TC003 | Create a folder without entering a name. | Folder should not be created. |
+| TC004 | Create two folders with the same name in the same location. | Duplicate folder name should not be allowed. |
+| TC005 | Click New Text File and enter a filename. | A new text file should be created. |
+| TC006 | Create a text file without entering an extension. | The system should automatically add .txt. |
+
+### Module 2: Upload Files
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC007 | Upload a single file. | File should be uploaded successfully. |
+| TC008 | Upload multiple files together. | All selected files should be uploaded. |
+| TC009 | Upload files with different extensions. | Different file types should be accepted. |
+| TC010 | Upload a file with an existing filename. | The system should create a unique filename. |
+| TC011 | Upload without selecting any file. | No file should be uploaded and no error should occur. |
+| TC012 | Upload a large file when storage is insufficient. | An appropriate error message should be displayed. |
+
+### Module 3: Rename and Delete
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC013 | Rename an existing file. | File should be renamed successfully. |
+| TC014 | Rename an existing folder. | Folder should be renamed successfully. |
+| TC015 | Rename a file using an existing filename in the same folder. | Duplicate name should be rejected. |
+| TC016 | Delete an existing file. | Confirmation should appear and the file should be deleted after confirmation. |
+| TC017 | Cancel the delete confirmation. | File should remain unchanged. |
+| TC018 | Delete a folder containing files and subfolders. | Folder and all its contents should be deleted. |
+
+### Module 4: Grid View and List View
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC019 | Select Grid View. | Files and folders should appear as cards. |
+| TC020 | Select List View. | Files and folders should appear in list format. |
+| TC021 | Switch between Grid and List View. | View should change correctly without losing files. |
+| TC022 | Sort files by name. | Items should be sorted alphabetically, with folders first. |
+| TC023 | Sort files by type. | Items should be sorted according to file type. |
+| TC024 | Sort by recently modified. | Most recently modified items should appear first. |
+| TC025 | Sort by oldest first and largest first. | Items should appear in the selected order. |
+
+### Module 5: Copy, Cut and Paste
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC026 | Copy an existing file and paste it into another folder. | A duplicate file should be created. |
+| TC027 | Cut a file and paste it into another folder. | File should move to the destination folder. |
+| TC028 | Copy a folder containing files. | Folder and its contents should be copied. |
+| TC029 | Cut a folder and paste it inside its own subfolder. | System should prevent the operation. |
+| TC030 | Paste without copying or cutting anything. | Appropriate message should be displayed. |
+| TC031 | Paste a file into the same folder where it already exists. | System should create a unique name for the copied file. |
+
+### Module 6: File Information and Preview
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC032 | Click the Details button for a file. | File information should be displayed. |
+| TC033 | Check file size and file type. | Correct file size and type should be displayed. |
+| TC034 | Preview an image file. | Image should be displayed correctly. |
+| TC035 | Preview a text file. | Text content should be displayed. |
+| TC036 | Preview a video or audio file. | Media player should be displayed with playback controls. |
+| TC037 | Preview an unsupported file type. | Appropriate preview unavailable message should appear. |
+
+### Module 7: Favorites and Navigation
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC038 | Add a file to Favorites. | File should be marked with a star. |
+| TC039 | Open Favorites. | All favorited files and folders should be displayed. |
+| TC040 | Remove an item from Favorites. | Item should disappear from Favorites. |
+| TC041 | Open a folder. | Its contents should be displayed. |
+| TC042 | Click Back. | Previous parent folder should open. |
+| TC043 | Click Home. | User should return to the Home directory. |
+
+### Module 8: Drag and Drop, Theme and Data Storage
+
+| TC ID | Test Scenario | Expected Result |
+|---|---|---|
+| TC044 | Drag and drop files into the upload area. | Files should be uploaded successfully. |
+| TC045 | Enable Dark Mode and refresh the browser. | Dark Mode preference should be retained. |
+| TC046 | Enable Light Mode. | Application should switch to Light Mode. |
+| TC047 | Save changes in the text editor. | Updated content should be saved. |
+| TC048 | Refresh the browser after creating files and folders. | Previously saved files and folders should remain available. |
+| TC049 | Edit a text file, save it and reopen it. | Updated text content should be displayed. |
+| TC050 | Open the application in a smaller screen. | Layout should adjust to the screen size. |
+
+## 3. Negative Test Scenarios
+
+1. Try creating a folder without a name.
+2. Try creating a duplicate filename.
+3. Try renaming a file with an empty name.
+4. Try deleting a folder and cancel the confirmation.
+5. Try pasting without copying or cutting an item.
+6. Try moving a folder into its own subfolder.
+7. Try uploading files when browser storage is full.
+8. Try opening an unsupported file preview.
+9. Try searching for a file that does not exist.
+10. Try refreshing the application while viewing a folder.
+
+## 4. Test Environment
+
+| Component | Requirement |
+|---|---|
+| Operating System | Windows 10 / Windows 11 |
+| Browser | Google Chrome / Microsoft Edge |
+| Frontend | HTML, CSS, JavaScript |
+| Database | IndexedDB |
+| Testing Method | Manual Testing |
+
+## 5. Test Result Status
+
+Each test case should be marked after execution:
+
+- **PASS:** Actual result matches expected result.
+- **FAIL:** Actual result does not match expected result.
+- **BLOCKED:** Testing cannot continue due to another issue.
+- **NOT TESTED:** Test case has not yet been executed.
+
+## 6. Final Testing Objective
+
+The application should allow users to manage files and folders easily, upload different file types, edit text files, preview supported files, organize important items using Favorites, and retain saved data after refreshing the browser.

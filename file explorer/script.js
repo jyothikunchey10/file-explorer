@@ -1,677 +1,1068 @@
+/ ========================================
+// MY FILE EXPLORER
+// Main JavaScript
+// ========================================
 
-const STORAGE_KEY = "myFileExplorer";
+const DB_NAME = "MyFileExplorerDB";
+const STORE_NAME = "files";
 
-let items = [];
+let db;
 let currentFolder = null;
-let editingFileId = null;
+let selectedId = null;
+let clipboard = null;
+let editorFileId = null;
+let currentView = "grid";
+let favoritesMode = false;
+let previewURL = null;
 
-// Load previously saved files and folders.
-try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    const parsed = saved ? JSON.parse(saved) : [];
+// ========================================
+// DATABASE - SAVE FILES PERMANENTLY
+// ========================================
 
-    items = Array.isArray(parsed) ? parsed : [];
-} catch (error) {
-    items = [];
-    console.error("Could not load saved data:", error);
+function openDatabase() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+
+        request.onupgradeneeded = event => {
+            const database = event.target.result;
+
+            if (!database.objectStoreNames.contains(STORE_NAME)) {
+                database.createObjectStore(STORE_NAME, {
+                    keyPath: "id"
+                });
+            }
+        };
+
+        request.onsuccess = event => {
+            db = event.target.result;
+            resolve(db);
+        };
+
+        request.onerror = () => reject(request.error);
+    });
 }
 
-// Save all files and folders.
-function saveItems() {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-        return true;
-    } catch (error) {
-        showStatus(
-            "Storage is full or unavailable. Download files or use IndexedDB.",
-            true
-        );
-        console.error(error);
-        return false;
-    }
+function getAllItems() {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, "readonly");
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
 }
 
-function showStatus(message, isError = false) {
-    const status = document.getElementById("status");
-    status.textContent = message;
-    status.style.color = isError ? "#dc2626" : "#15803d";
+function saveItem(item) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, "readwrite");
+
+        transaction.objectStore(STORE_NAME).put(item);
+
+        transaction.oncomplete = () => resolve(item);
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+    });
 }
 
-function getItem(id) {
-    return items.find(item => item.id === id);
+function deleteItemFromDB(id) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, "readwrite");
+
+        transaction.objectStore(STORE_NAME).delete(id);
+
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+    });
 }
 
-function makeId() {
+function generateId() {
     return crypto.randomUUID();
 }
 
-// Build a readable path for an item.
-function getPath(item) {
-    const names = [item.name];
-    let parentId = item.parentId;
-    let steps = 0;
+// ========================================
+// HELPERS
+// ========================================
 
-    while (parentId !== null && steps++ < items.length) {
-        const parent = getItem(parentId);
-
-        if (!parent) break;
-
-        names.unshift(parent.name);
-        parentId = parent.parentId;
-    }
-
-    return "Home / " + names.join(" / ");
+function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
 }
 
-// Create a new folder.
-function createFolder() {
+function showStatus(message) {
+    document.getElementById("status").textContent = message;
+}
+
+function getFileType(item) {
+    if (item.type === "folder") return "Folder";
+
+    const extension = item.name.includes(".")
+        ? item.name.split(".").pop().toUpperCase()
+        : "FILE";
+
+    return extension;
+}
+
+function getFileIcon(item) {
+    if (item.type === "folder") return "📁";
+
+    const name = item.name.toLowerCase();
+
+    if (/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/.test(name)) return "🖼️";
+    if (/\.(pdf)$/.test(name)) return "📕";
+    if (/\.(doc|docx)$/.test(name)) return "📘";
+    if (/\.(xls|xlsx|csv)$/.test(name)) return "📊";
+    if (/\.(mp3|wav|ogg)$/.test(name)) return "🎵";
+    if (/\.(mp4|webm|mov)$/.test(name)) return "🎬";
+    if (/\.(zip|rar|7z)$/.test(name)) return "📦";
+    if (/\.(js|html|css|json|py|java|txt|md)$/.test(name)) return "📄";
+
+    return "📃";
+}
+
+function formatSize(bytes) {
+    if (bytes === 0) return "0 Bytes";
+
+    const units = ["Bytes", "KB", "MB", "GB"];
+    const index = Math.floor(Math.log(bytes) / Math.log(1024));
+
+    return (
+        (bytes / Math.pow(1024, index)).toFixed(2) +
+        " " +
+        units[index]
+    );
+}
+
+function formatDate(date) {
+    return new Date(date).toLocaleString();
+}
+
+async function findItem(id) {
+    const items = await getAllItems();
+    return items.find(item => item.id === id);
+}
+
+// ========================================
+// INITIALIZE APPLICATION
+// ========================================
+
+async function initializeExplorer() {
+    try {
+        await openDatabase();
+
+        renderItems();
+
+        document.getElementById("dropZone").addEventListener(
+            "dragover",
+            handleDragOver
+        );
+
+        document.getElementById("dropZone").addEventListener(
+            "dragleave",
+            handleDragLeave
+        );
+
+        document.getElementById("dropZone").addEventListener(
+            "drop",
+            handleDrop
+        );
+
+        document.addEventListener("keydown", handleKeyboard);
+
+        document.getElementById("fileList").addEventListener(
+            "click",
+            handleFileClick
+        );
+
+        document.getElementById("fileList").addEventListener(
+            "dblclick",
+            handleFileDoubleClick
+        );
+
+        document.getElementById("fileList").addEventListener(
+            "keydown",
+            event => {
+                if (event.key === "Enter" &&
+                    event.target.classList.contains("file-card")) {
+                    openItem(event.target.dataset.id);
+                }
+            }
+        );
+
+        // Restore theme preference
+        if (localStorage.getItem("explorerTheme") === "dark") {
+            document.body.classList.add("dark");
+            document.getElementById("themeButton").textContent = "☀️ Light Mode";
+        }
+
+        showStatus("File Explorer is ready!");
+
+    } catch (error) {
+        console.error(error);
+        showStatus("Unable to open file storage. Please check browser storage permissions.");
+    }
+}
+
+document.addEventListener("DOMContentLoaded", initializeExplorer);
+
+// ========================================
+// CREATE NEW FOLDER
+// ========================================
+
+async function createFolder() {
     const name = prompt("Enter folder name:");
 
     if (!name || !name.trim()) return;
 
-    items.push({
-        id: makeId(),
-        name: name.trim(),
-        type: "folder",
-        parentId: currentFolder,
-        content: "",
-        modified: Date.now()
-    });
+    const cleanName = name.trim();
+    const items = await getAllItems();
 
-    if (!saveItems()) {
-        items.pop();
+    if (items.some(item =>
+        item.parentId === currentFolder &&
+        item.name.toLowerCase() === cleanName.toLowerCase()
+    )) {
+        alert("A file or folder with this name already exists.");
         return;
     }
 
+    await saveItem({
+        id: generateId(),
+        name: cleanName,
+        type: "folder",
+        parentId: currentFolder,
+        favorite: false,
+        size: 0,
+        mime: "",
+        modified: Date.now()
+    });
+
     renderItems();
-    showStatus("Folder created successfully.");
+    showStatus("Folder created successfully!");
 }
 
-// Create a new text file and open the editor.
-function createFile() {
-    const name = prompt(
-        "Enter file name (example: notes.txt):"
-    );
+// ========================================
+// CREATE NEW TEXT FILE
+// ========================================
+
+async function createFile() {
+    const name = prompt("Enter text file name:", "New File.txt");
 
     if (!name || !name.trim()) return;
 
-    const fileName = name.trim();
+    let fileName = name.trim();
 
-    items.push({
-        id: makeId(),
+    if (!fileName.includes(".")) {
+        fileName += ".txt";
+    }
+
+    const items = await getAllItems();
+
+    if (items.some(item =>
+        item.parentId === currentFolder &&
+        item.name.toLowerCase() === fileName.toLowerCase()
+    )) {
+        alert("An item with this name already exists.");
+        return;
+    }
+
+    const item = {
+        id: generateId(),
         name: fileName,
         type: "file",
         parentId: currentFolder,
-        content: "",
-        mimeType: "text/plain",
-        dataUrl: null,
+        favorite: false,
+        size: 0,
+        mime: "text/plain",
+        content: new Blob([""], { type: "text/plain" }),
         modified: Date.now()
-    });
+    };
 
-    const file = items[items.length - 1];
-
-    if (!saveItems()) {
-        items.pop();
-        return;
-    }
+    await saveItem(item);
 
     renderItems();
-    openFile(file.id);
+    openEditor(item);
 }
 
-// Open a folder.
-function openFolder(id) {
-    const folder = getItem(id);
+// ========================================
+// UPLOAD FILES
+// ========================================
 
-    if (!folder || folder.type !== "folder") return;
-
-    currentFolder = id;
-    cancelEditor();
-    renderItems();
-}
-
-// Return to the parent folder.
-function goBack() {
-    if (currentFolder === null) return;
-
-    const folder = getItem(currentFolder);
-
-    currentFolder = folder ? folder.parentId : null;
-
-    cancelEditor();
-    renderItems();
-}
-
-// Return to the root folder.
-function goHome() {
-    currentFolder = null;
-    cancelEditor();
-    renderItems();
-}
-
-// Check whether a file can be edited as text.
-function isTextFile(file) {
-    const name = file.name.toLowerCase();
-
-    return (
-        file.dataUrl == null &&
-        (
-            (file.mimeType || "").startsWith("text/") ||
-            /\.(txt|md|csv|json|html|css|js|xml|log|py|java|php|sql|yml|yaml|svg)$/.test(name)
-        )
-    );
-}
-
-// Open a text file in the editor.
-function openFile(id) {
-    const file = getItem(id);
-
-    if (!file || file.type !== "file") return;
-
-    if (!isTextFile(file)) {
-        showStatus(
-            "This is not a text file. Use Download to open it.",
-            true
-        );
-        return;
-    }
-
-    editingFileId = id;
-
-    document.getElementById("editorTitle").textContent =
-        "Editing: " + file.name;
-
-    document.getElementById("editorContent").value =
-        file.content || "";
-
-    document.getElementById("editorPanel").hidden = false;
-    document.getElementById("editorContent").focus();
-}
-
-// Save text editor content.
-function saveEditor() {
-    const file = getItem(editingFileId);
-
-    if (!file || file.type !== "file") {
-        showStatus("No file is selected.", true);
-        return;
-    }
-
-    const previousContent = file.content;
-    const previousModified = file.modified;
-
-    file.content = document.getElementById("editorContent").value;
-    file.dataUrl = null;
-    file.modified = Date.now();
-
-    if (!saveItems()) {
-        file.content = previousContent;
-        file.modified = previousModified;
-        return;
-    }
-
-    renderItems();
-    showStatus("File saved successfully.");
-}
-
-// Close the editor.
-function cancelEditor() {
-    editingFileId = null;
-    document.getElementById("editorPanel").hidden = true;
-    document.getElementById("editorContent").value = "";
-}
-
-// Rename a file or folder.
-function renameItem(id) {
-    const item = getItem(id);
-
-    if (!item) return;
-
-    const name = prompt("Enter the new name:", item.name);
-
-    if (!name || !name.trim()) return;
-
-    const newName = name.trim();
-
-    if (newName === item.name) return;
-
-    const oldName = item.name;
-    const oldModified = item.modified;
-
-    item.name = newName;
-    item.modified = Date.now();
-
-    if (!saveItems()) {
-        item.name = oldName;
-        item.modified = oldModified;
-        return;
-    }
-
-    if (editingFileId === id) {
-        document.getElementById("editorTitle").textContent =
-            "Editing: " + item.name;
-    }
-
-    renderItems();
-    showStatus("Renamed successfully.");
-}
-
-// Check whether a folder is inside another folder.
-function isDescendant(folderId, possibleAncestorId) {
-    let parentId = folderId;
-    let steps = 0;
-
-    while (parentId !== null && steps++ <= items.length) {
-        if (parentId === possibleAncestorId) return true;
-
-        const parent = getItem(parentId);
-        if (!parent) return false;
-
-        parentId = parent.parentId;
-    }
-
-    return false;
-}
-
-// Delete an item and everything inside its folder.
-function deleteItem(id) {
-    const item = getItem(id);
-
-    if (!item) return;
-
-    if (!confirm("Delete " + item.name + " and its contents?")) {
-        return;
-    }
-
-    const idsToDelete = [id];
-
-    for (let i = 0; i < idsToDelete.length; i++) {
-        items.forEach(child => {
-            if (
-                child.parentId === idsToDelete[i] &&
-                !idsToDelete.includes(child.id)
-            ) {
-                idsToDelete.push(child.id);
-            }
-        });
-    }
-
-    const previousItems = items;
-    const previousFolder = currentFolder;
-    const previousEditor = editingFileId;
-
-    items = items.filter(
-        item => !idsToDelete.includes(item.id)
-    );
-
-    if (idsToDelete.includes(currentFolder)) {
-        currentFolder = null;
-    }
-
-    if (idsToDelete.includes(editingFileId)) {
-        cancelEditor();
-    }
-
-    if (!saveItems()) {
-        items = previousItems;
-        currentFolder = previousFolder;
-
-        if (previousEditor !== null) {
-            openFile(previousEditor);
-        }
-
-        renderItems();
-        return;
-    }
-
-    renderItems();
-    showStatus("Item deleted successfully.");
-}
-
-// Return all folders that can be selected as a destination.
-function getFolders() {
-    return items.filter(item => item.type === "folder");
-}
-
-// Copy a file or an entire folder tree.
-function copyItem(id) {
-    const source = getItem(id);
-
-    if (!source) return;
-
-    const copyName = prompt(
-        "Enter a name for the copy:",
-        "Copy of " + source.name
-    );
-
-    if (!copyName || !copyName.trim()) return;
-
-    const destination = currentFolder;
-
-    const newItems = [];
-
-    function duplicateTree(original, parentId, rootName) {
-        const copy = {
-            ...original,
-            id: makeId(),
-            name: rootName || original.name,
-            parentId: parentId,
-            modified: Date.now()
-        };
-
-        newItems.push(copy);
-
-        if (original.type === "folder") {
-            const children = items.filter(
-                child => child.parentId === original.id
-            );
-
-            children.forEach(child => {
-                duplicateTree(child, copy.id, null);
-            });
-        }
-    }
-
-    duplicateTree(source, destination, copyName.trim());
-
-    items.push(...newItems);
-
-    if (!saveItems()) {
-        items.splice(items.length - newItems.length, newItems.length);
-        return;
-    }
-
-    renderItems();
-    showStatus("Copy created successfully.");
-}
-
-// Move a file or folder into another folder.
-function moveItem(id) {
-    const item = getItem(id);
-
-    if (!item) return;
-
-    const folders = getFolders().filter(folder =>
-        folder.id !== id &&
-        !isDescendant(folder.id, id)
-    );
-
-    const destinations = [
-        { id: null, path: "Home (root folder)" },
-        ...folders.map(folder => ({
-            id: folder.id,
-            path: getPath(folder)
-        }))
-    ];
-
-    const instructions = destinations
-        .map((destination, index) =>
-            `${index}: ${destination.path}`
-        )
-        .join("\n");
-
-    const answer = prompt(
-        "Choose a destination number:\n\n" + instructions,
-        "0"
-    );
-
-    if (answer === null || answer.trim() === "") return;
-
-    const index = Number(answer);
-
-    if (
-        !Number.isInteger(index) ||
-        index < 0 ||
-        index >= destinations.length
-    ) {
-        showStatus("Invalid destination number.", true);
-        return;
-    }
-
-    const destinationId = destinations[index].id;
-
-    if (destinationId === item.parentId) {
-        showStatus("Item is already in that folder.");
-        return;
-    }
-
-    const oldParentId = item.parentId;
-
-    item.parentId = destinationId;
-    item.modified = Date.now();
-
-    if (!saveItems()) {
-        item.parentId = oldParentId;
-        return;
-    }
-
-    renderItems();
-    showStatus("Item moved successfully.");
-}
-
-// Upload one or more files from the computer.
 async function uploadFiles(event) {
     const files = Array.from(event.target.files || []);
 
-    // Allow selecting the same file again later.
+    await uploadFileArray(files);
+
     event.target.value = "";
+}
 
-    for (const file of files) {
-        try {
-            const data = await readFile(file);
+async function uploadFileArray(files) {
+    if (!files.length) return;
 
-            const uploadedItem = {
-                id: makeId(),
-                name: file.name,
+    try {
+        for (const file of files) {
+            const items = await getAllItems();
+
+            let fileName = file.name;
+            let counter = 1;
+
+            while (items.some(item =>
+                item.parentId === currentFolder &&
+                item.name.toLowerCase() === fileName.toLowerCase()
+            )) {
+                const dot = file.name.lastIndexOf(".");
+                const base = dot > 0 ? file.name.slice(0, dot) : file.name;
+                const ext = dot > 0 ? file.name.slice(dot) : "";
+
+                fileName = `${base} (${counter++})${ext}`;
+            }
+
+            await saveItem({
+                id: generateId(),
+                name: fileName,
                 type: "file",
                 parentId: currentFolder,
-                mimeType: file.type || "application/octet-stream",
-                content: data.isText ? data.content : "",
-                dataUrl: data.isText ? null : data.dataUrl,
+                favorite: false,
+                size: file.size,
+                mime: file.type || "application/octet-stream",
+                content: file,
                 modified: Date.now()
-            };
-
-            items.push(uploadedItem);
-
-            if (!saveItems()) {
-                items.pop();
-                return;
-            }
-        } catch (error) {
-            console.error(error);
-            showStatus("Could not upload " + file.name, true);
-            continue;
+            });
         }
-    }
 
-    renderItems();
-    showStatus("Upload finished.");
+        renderItems();
+        showStatus(`${files.length} file(s) uploaded successfully!`);
+
+    } catch (error) {
+        console.error(error);
+        alert("Upload failed. Browser storage may be full.");
+    }
 }
 
-function readFile(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        const name = file.name.toLowerCase();
+// ========================================
+// DRAG AND DROP UPLOAD
+// ========================================
 
-        const textExtensions =
-            /\.(txt|md|csv|json|html|css|js|xml|log|py|java|php|sql|yml|yaml|svg)$/;
-
-        const isText =
-            (file.type.startsWith("text/") ||
-             textExtensions.test(name)) &&
-            !file.type.includes("javascript");
-
-        reader.onload = () => {
-            if (isText) {
-                resolve({
-                    isText: true,
-                    content: reader.result,
-                    dataUrl: null
-                });
-            } else {
-                resolve({
-                    isText: false,
-                    content: "",
-                    dataUrl: reader.result
-                });
-            }
-        };
-
-        reader.onerror = () => reject(reader.error);
-
-        if (isText) {
-            reader.readAsText(file);
-        } else {
-            reader.readAsDataURL(file);
-        }
-    });
+function handleDragOver(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add("drag-over");
 }
 
-// Download a stored file.
-function downloadFile(id) {
-    const file = getItem(id);
-
-    if (!file || file.type !== "file") return;
-
-    let url;
-
-    if (file.dataUrl) {
-        url = file.dataUrl;
-    } else {
-        const blob = new Blob(
-            [file.content || ""],
-            { type: file.mimeType || "text/plain" }
-        );
-
-        url = URL.createObjectURL(blob);
-    }
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = file.name;
-
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    if (url.startsWith("blob:")) {
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-
-    showStatus("Download started.");
+function handleDragLeave(event) {
+    event.currentTarget.classList.remove("drag-over");
 }
 
-// Display items and handle search and sorting.
-function renderItems() {
-    const fileList = document.getElementById("fileList");
-    const breadcrumb = document.getElementById("breadcrumb");
+async function handleDrop(event) {
+    event.preventDefault();
+
+    event.currentTarget.classList.remove("drag-over");
+
+    const files = Array.from(event.dataTransfer.files);
+
+    await uploadFileArray(files);
+}
+
+// ========================================
+// RENDER FILES AND FOLDERS
+// ========================================
+
+async function renderItems() {
+    if (!db) return;
+
+    const allItems = await getAllItems();
+
     const search = document.getElementById("searchInput").value
         .trim()
         .toLowerCase();
 
-    fileList.replaceChildren();
-
-    if (search) {
-        breadcrumb.textContent = "Search results";
-    } else if (currentFolder === null) {
-        breadcrumb.textContent = "Home";
-    } else {
-        const folder = getItem(currentFolder);
-        breadcrumb.textContent = folder ? getPath(folder) : "Home";
-    }
-
-    let visibleItems;
-
-    if (search) {
-        visibleItems = items.filter(item =>
-            item.name.toLowerCase().includes(search)
-        );
-    } else {
-        visibleItems = items.filter(
-            item => item.parentId === currentFolder
-        );
-    }
-
     const sort = document.getElementById("sortSelect").value;
 
-    visibleItems.sort((a, b) => {
+    let items;
+
+    if (favoritesMode) {
+        items = allItems.filter(item => item.favorite);
+    } else {
+        items = allItems.filter(item => item.parentId === currentFolder);
+    }
+
+    if (search) {
+        items = items.filter(item =>
+            item.name.toLowerCase().includes(search)
+        );
+    }
+
+    items.sort((a, b) => {
+        if (sort === "name") {
+            if (a.type !== b.type) {
+                return a.type === "folder" ? -1 : 1;
+            }
+            return a.name.localeCompare(b.name);
+        }
+
         if (sort === "type") {
-            return a.type.localeCompare(b.type) ||
-                a.name.localeCompare(b.name);
+            return getFileType(a).localeCompare(getFileType(b));
         }
 
         if (sort === "newest") {
-            return (b.modified || 0) - (a.modified || 0);
+            return b.modified - a.modified;
         }
 
-        return a.name.localeCompare(b.name);
+        if (sort === "oldest") {
+            return a.modified - b.modified;
+        }
+
+        if (sort === "size") {
+            return b.size - a.size;
+        }
+
+        return 0;
     });
 
-    if (visibleItems.length === 0) {
-        const empty = document.createElement("p");
-        empty.className = "empty-message";
-        empty.textContent = search
-            ? "No matching files or folders found."
-            : "This folder is empty.";
+    const fileList = document.getElementById("fileList");
 
-        fileList.appendChild(empty);
+    fileList.className =
+        currentView === "grid" ? "file-grid" : "file-list";
+
+    document.getElementById("itemCount").textContent =
+        `${items.length} item(s)`;
+
+    document.getElementById("folderHeading").textContent =
+        favoritesMode ? "⭐ Favorites" : "Current Folder";
+
+    if (currentView === "list") {
+        fileList.innerHTML = `
+            <div class="list-header">
+                <span>Name</span>
+                <span class="type-column">Type / Size</span>
+                <span class="modified-column">Modified</span>
+                <span>Actions</span>
+            </div>
+        `;
+    } else {
+        fileList.innerHTML = "";
+    }
+
+    if (items.length === 0) {
+        fileList.innerHTML += `
+            <div class="empty-state">
+                <div style="font-size:45px">📂</div>
+                <h3>No files or folders found</h3>
+                <p>Create a folder or upload files to get started.</p>
+            </div>
+        `;
+        updateNavigation(allItems);
         return;
     }
 
-    visibleItems.forEach(item => {
-        const row = document.createElement("div");
-        row.className = "item";
+    for (const item of items) {
+        const selected = selectedId === item.id ? "selected" : "";
 
-        const nameBox = document.createElement("div");
-        nameBox.className = "item-name";
+        const name = escapeHTML(item.name);
+        const icon = getFileIcon(item);
+        const type = escapeHTML(getFileType(item));
+        const modified = escapeHTML(formatDate(item.modified));
+        const size = formatSize(item.size || 0);
 
-        const name = document.createElement("span");
-        name.textContent =
-            (item.type === "folder" ? "📁 " : "📄 ") + item.name;
+        const actions = `
+            <div class="card-actions">
+                <button data-action="rename" data-id="${item.id}" title="Rename">✏️</button>
+                <button data-action="details" data-id="${item.id}" title="Details">ℹ️</button>
+                <button data-action="copy" data-id="${item.id}" title="Copy">📋</button>
+                <button data-action="cut" data-id="${item.id}" title="Cut">✂️</button>
+                <button data-action="favorite" data-id="${item.id}" title="Favorite">
+                    ${item.favorite ? "⭐" : "☆"}
+                </button>
+                <button data-action="delete" data-id="${item.id}" title="Delete">🗑️</button>
+            </div>
+        `;
 
-        if (item.type === "folder") {
-            name.className = "folder-name";
-            name.onclick = () => openFolder(item.id);
+        if (currentView === "grid") {
+            fileList.innerHTML += `
+                <div class="file-card ${selected}"
+                    data-id="${item.id}"
+                    tabindex="0"
+                    role="button"
+                    aria-label="${name}">
+
+                    <span class="favorite-star"
+                        data-action="favorite"
+                        data-id="${item.id}"
+                        title="Toggle favorite">
+                        ${item.favorite ? "★" : ""}
+                    </span>
+
+                    <div class="file-icon">${icon}</div>
+                    <div class="file-name">${name}</div>
+                    <div class="file-meta">${type} · ${size}</div>
+
+                    ${actions}
+                </div>
+            `;
+        } else {
+            fileList.innerHTML += `
+                <div class="file-row ${selected}" data-id="${item.id}">
+                    <span>${icon} ${name} ${item.favorite ? "⭐" : ""}</span>
+                    <span class="type-column">${type} · ${size}</span>
+                    <span class="modified-column">${modified}</span>
+                    ${actions}
+                </div>
+            `;
         }
+    }
 
-        nameBox.appendChild(name);
+    updateNavigation(allItems);
+}
 
-        if (search) {
-            const path = document.createElement("span");
-            path.className = "item-meta";
-            path.textContent = getPath(item);
-            nameBox.appendChild(path);
+// ========================================
+// NAVIGATION AND BREADCRUMBS
+// ========================================
+
+async function updateNavigation(allItems) {
+    const breadcrumb = document.getElementById("breadcrumb");
+
+    if (favoritesMode) {
+        breadcrumb.textContent = "⭐ Favorites";
+        return;
+    }
+
+    const path = [];
+    let folderId = currentFolder;
+
+    while (folderId) {
+        const folder = allItems.find(item => item.id === folderId);
+
+        if (!folder) break;
+
+        path.unshift(folder);
+        folderId = folder.parentId;
+    }
+
+    breadcrumb.textContent =
+        "🏠 Home" +
+        path.map(folder => " / " + folder.name).join("");
+}
+
+async function openItem(id) {
+    const item = await findItem(id);
+
+    if (!item) return;
+
+    selectedId = id;
+
+    if (item.type === "folder") {
+        currentFolder = item.id;
+        favoritesMode = false;
+        document.getElementById("searchInput").value = "";
+        renderItems();
+        showStatus(`Opened folder: ${item.name}`);
+    } else {
+        const isText = item.mime?.startsWith("text/") ||
+            /\.(txt|md|html|css|js|json|xml|csv)$/i.test(item.name);
+
+        if (isText) {
+            openEditor(item);
+        } else {
+            openPreview(item);
         }
+    }
+}
 
-        const actions = document.createElement("div");
-        actions.className = "item-actions";
+function goBack() {
+    if (favoritesMode) {
+        goHome();
+        return;
+    }
 
-        function addButton(label, callback, className = "") {
-            const button = document.createElement("button");
-            button.textContent = label;
-            if (className) button.className = className;
-            button.onclick = callback;
-            actions.appendChild(button);
-        }
+    if (!currentFolder) return;
 
-        if (item.type === "file") {
-            if (isTextFile(item)) {
-                addButton("Edit", () => openFile(item.id));
-            }
-
-            addButton("Download", () => downloadFile(item.id));
-        }
-
-        addButton("Rename", () => renameItem(item.id));
-        addButton("Copy", () => copyItem(item.id));
-        addButton("Move", () => moveItem(item.id));
-        addButton("Delete", () => deleteItem(item.id), "danger");
-
-        row.appendChild(nameBox);
-        row.appendChild(actions);
-        fileList.appendChild(row);
+    findItem(currentFolder).then(folder => {
+        currentFolder = folder ? folder.parentId : null;
+        selectedId = null;
+        renderItems();
     });
 }
 
-// Initial display.
-renderItems();
+function goHome() {
+    currentFolder = null;
+    selectedId = null;
+    favoritesMode = false;
+
+    document.getElementById("searchInput").value = "";
+
+    renderItems();
+    showStatus("You are at Home.");
+}
+
+function showFavorites() {
+    favoritesMode = true;
+    selectedId = null;
+    renderItems();
+}
+
+// ========================================
+// RENAME FILES AND FOLDERS
+// ========================================
+
+async function renameItem(id) {
+    const item = await findItem(id);
+
+    if (!item) return;
+
+    const newName = prompt("Enter the new name:", item.name);
+
+    if (!newName || !newName.trim()) return;
+
+    const cleanName = newName.trim();
+    const items = await getAllItems();
+
+    if (items.some(other =>
+        other.id !== id &&
+        other.parentId === item.parentId &&
+        other.name.toLowerCase() === cleanName.toLowerCase()
+    )) {
+        alert("Another item already has this name.");
+        return;
+    }
+
+    item.name = cleanName;
+    item.modified = Date.now();
+
+    await saveItem(item);
+
+    renderItems();
+    showStatus("Renamed successfully!");
+}
+
+// ========================================
+// DELETE FILES AND FOLDERS
+// ========================================
+
+async function deleteItem(id) {
+    const item = await findItem(id);
+
+    if (!item) return;
+
+    const items = await getAllItems();
+
+    const descendants = [];
+
+    function collectChildren(parentId) {
+        items.filter(child => child.parentId === parentId)
+            .forEach(child => {
+                descendants.push(child.id);
+
+                if (child.type === "folder") {
+                    collectChildren(child.id);
+                }
+            });
+    }
+
+    if (item.type === "folder") {
+        collectChildren(item.id);
+    }
+
+    const total = descendants.length + 1;
+
+    const confirmed = confirm(
+        `Are you sure you want to delete "${item.name}"?\n\n` +
+        `${total} item(s) will be deleted.`
+    );
+
+    if (!confirmed) return;
+
+    for (const childId of descendants) {
+        await deleteItemFromDB(childId);
+    }
+
+    await deleteItemFromDB(id);
+
+    selectedId = null;
+
+    renderItems();
+    showStatus("Item(s) deleted successfully!");
+}
+
+// ========================================
+// COPY, CUT AND PASTE
+// ========================================
+
+async function copyItem(id) {
+    clipboard = {
+        id,
+        mode: "copy"
+    };
+
+    showStatus("Copied! Navigate to a folder and click Paste.");
+}
+
+async function cutItem(id) {
+    clipboard = {
+        id,
+        mode: "cut"
+    };
+
+    showStatus("Cut! Navigate to a folder and click Paste.");
+}
+
+async function pasteItems() {
+    if (!clipboard) {
+        alert("Nothing to paste. Copy or cut an item first.");
+        return;
+    }
+
+    if (clipboard.mode === "cut" && clipboard.id === currentFolder) {
+        alert("You cannot move a folder into itself.");
+        return;
+    }
+
+    const source = await findItem(clipboard.id);
+
+    if (!source) {
+        clipboard = null;
+        alert("The original item no longer exists.");
+        return;
+    }
+
+    if (source.parentId === currentFolder && clipboard.mode === "cut") {
+        alert("The item is already in this folder.");
+        return;
+    }
+
+    if (source.type === "folder") {
+        const allItems = await getAllItems();
+        let check = currentFolder;
+
+        while (check) {
+            if (check === source.id) {
+                alert("You cannot paste a folder into its own subfolder.");
+                return;
+            }
+
+            const parent = allItems.find(item => item.id === check);
+            check = parent?.parentId || null;
+        }
+    }
+
+    if (clipboard.mode === "cut") {
+        const items = await getAllItems();
+
+        if (items.some(item =>
+            item.id !== source.id &&
+            item.parentId === currentFolder &&
+            item.name.toLowerCase() === source.name.toLowerCase()
+        )) {
+            alert("An item with the same name already exists here.");
+            return;
+        }
+
+        source.parentId = currentFolder;
+        source.modified = Date.now();
+
+        await saveItem(source);
+
+        clipboard = null;
+
+        renderItems();
+        showStatus("Item moved successfully!");
+        return;
+    }
+
+    // Copy an entire folder and its contents.
+    const allItems = await getAllItems();
+    const idMap = new Map();
+
+    function collectTree(parentId, parentCopyId) {
+        const children = allItems.filter(item => item.parentId === parentId);
+
+        return children.map(child => {
+            const newId = generateId();
+            idMap.set(child.id, newId);
+
+            const cloned = {
+                ...child,
+                id: newId,
+                parentId: parentCopyId,
+                favorite: false,
+                modified: Date.now()
+            };
+
+            return {
+                original: child,
+                cloned,
+                children: child.type === "folder"
+                    ? collectTree(child.id, newId)
+                    : []
+            };
+        });
+    }
+
+    const existing = allItems.filter(item =>
+        item.parentId === currentFolder
+    );
+
+    let newName = source.name;
+    let counter = 1;
+
+    while (existing.some(item =>
+        item.name.toLowerCase() === newName.toLowerCase()
+    )) {
+        const dot = source.name.lastIndexOf(".");
+        const base = source.type === "file" && dot > 0
+            ? source.name.slice(0, dot)
+            : source.name;
+        const ext = source.type === "file" && dot > 0
+            ? source.name.slice(dot)
+            : "";
+
+        newName = `${base} (Copy ${counter++})${ext}`;
+    }
+
+    const rootCopyId = generateId();
+
+    const rootCopy = {
+        ...source,
+        id: rootCopyId,
+        name: newName,
+        parentId: currentFolder,
+        favorite: false,
+        modified: Date.now()
+    };
+
+    const tree = source.type === "folder"
+        ? collectTree(source.id, rootCopyId)
+        : [];
+
+    async function saveTree(nodes) {
+        for (const node of nodes) {
+            await saveItem(node.cloned);
+            await saveTree(node.children);
+        }
+    }
+
+    await saveItem(rootCopy);
+    await saveTree(tree);
+
+    renderItems();
+    showStatus("Item copied successfully!");
+}
+
+// ========================================
+// FAVORITES
+// ========================================
+
+async function toggleFavorite(id) {
+    const item = await findItem(id);
+
+    if (!item) return;
+
+    item.favorite = !item.favorite;
+    await saveItem(item);
+
+    renderItems();
+
+    showStatus(
+        item.favorite
+            ? "Added to Favorites ⭐"
+            : "Removed from Favorites"
+    );
+}
+
+// ========================================
+// FILE INFORMATION / DETAILS
+// ========================================
+
+async function showDetails(id) {
+    const item = await findItem(id);
+
+    if (!item) return;
+
+    const detailsPanel = document.getElementById("detailsPanel");
+
+    document.getElementById("detailsContent").innerHTML = `
+        <p><strong>Name:</strong> ${escapeHTML(item.name)}</p>
+        <p><strong>Type:</strong> ${escapeHTML(getFileType(item))}</p>
+        <p><strong>Size:</strong> ${formatSize(item.size || 0)}</p>
+        <p><strong>Modified:</strong> ${escapeHTML(formatDate(item.modified))}</p>
+        <p><strong>Location:</strong> ${escapeHTML(
+            item.parentId ? (await findItem(item.parentId))?.name || "Home" : "Home"
+        )}</p>
+        <p><strong>Favorite:</strong> ${item.favorite ? "Yes ⭐" : "No"}</p>
+    `;
+
+    detailsPanel.hidden = false;
+    detailsPanel.scrollIntoView({ behavior: "smooth" });
+}
+
+function closeDetails() {
+    document.getElementById("detailsPanel").hidden = true;
+}
+
+// ========================================
+// TEXT EDITOR
+// ========================================
+
+async function openEditor(item) {
+    editorFileId = item.id;
+
+    let content = "";
+
+    if (item.content) {
+        content = await item.content.text();
+    }
+
+    document.getElementById("editorTitle").textContent =
+        "Editing: " + item.name;
+
+    document.getElementById("editorContent").value = content;
+
+    document.getElementById("editorPanel").hidden = false;
+
+    document.getElementById("previewPanel").hidden = true;
+
+    document.getElementById("editorPanel")
+        .scrollIntoView({ behavior: "smooth" });
+}
+
+async function saveEditor() {
+    if (!editorFileId) return;
+
+    const item = await findItem(editorFileId);
+
+    if (!item) return;
+
+    const content = document.getElementById("editorContent").value;
+
+    item.content = new Blob([content], {
+        type: "text/plain"
+    });
+
+    item.size = item.content.size;
+    item.mime = "text/plain";
+    item.modified = Date.now();
+
+    await saveItem(item);
+
+    document.getElementById("editorPanel").hidden = true;
+
+    editorFileId = null;
+
+    renderItems();
+    showStatus("File saved successfully!");
+}
+
+function cancelEditor() {
+    const confirmed = confirm("Close editor without saving changes?");
+
+    if (!confirmed) return;
+
+    document.getElementById("editorPanel").hidden = true;
+    editorFileId = null;
+}
+
+// ========================================
+// FILE PREVIEW
+// ========================================
+
+async function openPreview(item) {
+    closePreview();
+
+    document.getElementById("previewTitle").textContent =
+        "Preview: " + item.name;
+
+    const previewContent = document.getElementById("previewContent");
+
+    previewContent.innerHTML = "";
+
+    const blob = item.content;
+
+    if (!blob) {
+        previewContent.textContent = "No preview available.";
+    } else if (
+        item.mime?.startsWith("image/") ||
+        /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(item.name)
+    ) {
+        previewURL = URL.createObjectURL(blob);
+
+        const img = document.createElement("img");
+        img.src = previewURL;
+        img.alt = item.name;
+
+        previewContent.appendChild(img);
+
+    } else if (
+        item.mime?.startsWith("text/") ||
+        /\.(txt|md|html|css|js|json|xml|csv)$/i.test(item.name)
+    ) {
+        const pre = document.createElement("pre");
+        pre.textContent = await blob.text();
+
+        previewContent.appendChild(pre);
+
+    } else if (item.mime?.startsWith("video/")) {
+        previewURL = URL.createObjectURL(blob);
+
+        const video = document.createElement("video");
+        video.src = previewURL;
+        video.controls = true;
+        video.style.maxWidth = "100%";
+
+        previewContent.appendChild(video);
+
+    } else if (item.mime?.startsWith("audio/")) {
+        previewURL = URL.createObjectURL(blob);
+
+        const audio = document.createElement("audio");
+        audio.src = previewURL;
+        audio.controls = true;
+
+        previewContent.appendChild(audio);
+
+    } else {
+        previewContent.textContent =
+            "Preview is not available for this file type. " +
+            "You can still view its file information.";
+    }
+
+    document.getElementById("previewPanel").hidden = false;
+
+    document.getElementById("editorPanel").hidden = true;
+
+    document.getElementById("previewPanel")
+        .scrollIntoView({ behavior: "smooth" });
+}
+
+function closePreview() {
+    if (previewURL) {
+        URL.revokeObjectURL(previewURL);
+        previewURL = null;
+    }
+
+    document.getElementById("previewPanel").hidden = true;
+}
+
+// ========================================
+// GRID AND LIST VIEW
+// ========================================
+
+function setView(view) {
+    currentView = view;
+
+    document.getElementById("gridButton")
+        .classList.toggle("view-active", view === "grid");
+
+    document.getElementById("listButton")
+        .classList.toggle("view-active", view === "list");
+
+    renderItems();
+}
+
+// ========================================
+// FILE CLICK EVENTS
+// ========================================
+
+async function handleFileClick(event) {
+    const actionButton = event.target.closest("[data-action]");
